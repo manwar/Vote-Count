@@ -63,13 +63,13 @@ When all ballots are exhausted the choice with the highest total wins.
 
 The Tie Breaker Method is modified.
 
-Instead of Majority, any choice with a current total less than another is eliminated.
+Instead of Majority, any choice with a current total less than another is eliminated. This allows resolution of any number of choices in a tie.
 
 The winner is the last choice remaining.
 
-head2 TieBreakerGrandJunction
+=head2 TieBreakerGrandJunction
 
-  my $resolve = $Election->TieBreakerGrandJunction( $choice1, $choice2  );
+  my $resolve = $Election->TieBreakerGrandJunction( $choice1, $choice2 [ $choice3 ... ]  );
   if ( $resolve->{'winner'}) { say "Tie Winner is $resolve->{'winner'}"}
   elsif ( $resolve->{'tie'}) {
     my @tied = $resolve->{'tied'}->@*;
@@ -117,20 +117,21 @@ sub TieBreakerGrandJunction ( $self, @choices ) {
 return { 'winner' => 0, 'tie' => 1, 'tied' => \@choices };
 }
 
+=head1 Borda-like Later Harm Protected
 
-=head2 TieBreaker
+This method is superficially similar to Borda. However, it only scores the best ranked member of the tie, ignoring the later votes. The tie member with the highest score wins. The original position on the ballot is used to score. It is subject to all of the Borda weighting problems. It is Later Harm Protected (within the tied set), but less resolvable than Modified Grand Junction.
+
+=head2 TieBreakerBordalikeLaterHarm ()
+
+  Currently unimplemented ...
+
+=head1 TieBreaker
 
 Implements some basic methods for resolving ties. The default value for IRV is 'all', and the default value for Matrix is 'none'. 'all' is inapproriate for Matrix, and 'none' is inappropriate for IRV.
 
-By default RunIRV sets a variable of $tiebreaker = 'all', which is to delete all tied choices. Alternate values that can be set are 'borda' (Borda Count the currently active choices), 'borda_all' (Borda Count all of the Choices on the Ballots), 'grand_junction' is similar to that method and Approval. The Borda Count methods use the defaults.
+  my @keep = $self->TieBreaker( $tiebreaker, $active, @choices );
 
-All was chosen as the module default because it is Later Harm safe. Modified Grand Junction is the most resolveable.
-
-In the event that the tie-breaker returns a tie eliminate all is used, unless that would eliminate all choices, in which case the election returns a tie.
-
-  my @remove = $self->TieBreaker( $tiebreaker, $active, @choices );
-
-TieBreaker returns a list containing the winner, if the method is 'none' the list is empty. If the TieBreaker is a tie there will be multiple elements.
+TieBreaker returns a list containing the winner, if the method is 'none' the list is empty, if 'all' the original @choices list is returned. If the TieBreaker is a tie there will be multiple elements.
 
 =cut
 

@@ -28,7 +28,7 @@ my $S1 =
   );
 
 my $winner1 = SmithSetIRV( $S1 ) ;
-is( $winner1, 'MINTCHIP', 'simple set with condorcet winner');
+is( $winner1->{'winner'}, 'MINTCHIP', 'simple set with condorcet winner');
 note $S1->logt;
 
 my $S2 =
@@ -39,7 +39,7 @@ my $S2 =
   );
 
 my $winner2 = SmithSetIRV( $S2 ) ;
-is( $winner2, 'MINTCHIP', 'set with no condorcet winner');
+is( $winner2->{'winner'}, 'MINTCHIP', 'set with no condorcet winner');
 note $S2->logt;
 
 my $S3 =
@@ -49,12 +49,11 @@ my $S3 =
     'DropRule'  => 'topcount',
   );
 
-my $winner3 = SmithSetIRV( $S3 ) ;
-is( $winner3, '', 'set that ends with a tie returns empty string for winenr');
-my $tiechoices = { 'FUDGESWIRL', 1,'VANILLA',1};
-is_deeply( $S3->Active(), $tiechoices,
-  'after a tie the activeset is the tied choices'
-);
+my $result3 = SmithSetIRV( $S3 ) ;
+is( $result3->{'winner'}, 0, 'set that ends with a tie returns a false value winner');
+# my $tiechoices = { 'FUDGESWIRL', 1,'VANILLA',1};
+is_deeply( $result3->{'tied'}, ['FUDGESWIRL', 'VANILLA'],
+  'tied choices in $result->{tied}');
 note $S3->logv;
 # p $S3->Active();
 

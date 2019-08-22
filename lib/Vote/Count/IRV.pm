@@ -51,7 +51,7 @@ sub _ResolveTie (
   if ( @choices == scalar( keys %high ) ) { return @choices}
 # tiebreaker returns winner, we want losers!
 # use map to remove winner(s) from @choices.
-  my @low = map { if ( $high{$_}) { } else { $_ } } @choices ;
+  my @low = sort (map { if ( $high{$_}) { } else { $_ } } @choices) ;
   return @low;
 }
 

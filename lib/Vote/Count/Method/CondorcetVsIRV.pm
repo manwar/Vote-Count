@@ -5,13 +5,15 @@ use feature qw /postderef signatures/;
 
 package Vote::Count::Method::CondorcetVsIRV;
 
-use namespace::autoclean;
-use Moose;
+use Exporter::Easy ( EXPORT => [ 'CondorcetVsIRV' ] );
 
 use Vote::Count;
 use Vote::Count::Method::CondorcetIRV;
 
 our $VERSION='0.021';
+
+
+no warnings 'undefined';
 
 =head1 NAME
 
@@ -35,11 +37,13 @@ Vote::Count::Method::CondorcetVsIRV
 
 Determine if the Condorcet Winner needed votes from the IRV winner, elect the condorcet winner if there was not a later harm violation, elect the IRV winner if there was.
 
-The methods looks for a Condorcet Winner, if there is none it uses IRV to find the winner. If there is a Condorcet Winner it uses standard IRV to find the IRV winner. It then copies the ballots and redacts the later choice from those ballots that indicated both. It then determines if one of the two choices is a Condorcet Winner, if not it determines if one of them would win IRV. If either choice is the winner with redacted ballots, they win. If neither wins, the Condorcet Winner dependended on a Later Harm effect against the IRV winner, and the IRV Winner is elected.
+The method looks for a Condorcet Winner, if there is none it uses IRV to find the winner. If there is a Condorcet Winner it uses standard IRV to find the IRV winner. It then copies the ballots and redacts the later choice from those ballots that indicated both. It then determines if one of the two choices is a Condorcet Winner, if not it determines if one of them would win IRV. If either choice is the winner with redacted ballots, they win. If neither wins, the Condorcet Winner dependended on a Later Harm effect against the IRV winner, and the IRV Winner is elected.
 
 The relaxed later harm option, when neither choice wins the redacted ballots, takes the greatest loss by the Condorcet Winner in the redacted matrix and compares it to their margin of victory over the IRV winner. If the victory margin is greater the Condorcet Winner is elected.
 
 =head2 Implementation
+
+Details specific to this implementation. 
 
 CondorcetVsIRV applies the TCA Floor Rule.
 
@@ -55,34 +59,51 @@ The tie breaker is defaulted to (modified) Grand Junction for resolvability.
 
 CondorcetVsIRV is exported.
 
+  my $Election = Vote::Count->new( ... );
+  my $winner = CondorcetVsIRV( $Election );
+  or
+  my $winner = CondorcetVsIRV( $Election, relaxed => 1 );
 
 
 =head2 Criteria
 
 =head3 Simplicity
 
-SmithSet IRV is easy to understand but requires a full matrix and thus is harder to handcount than Benham. An aggressive Floor Rule like TCA (see Floor module) is recommended. If it is desired to Hand Count, a more aggressive Floor Rule would be required, like 15% of First Choice votes. 15% First Choice limits to 6 choices, but 6 choices still require 15 pairings to complete the Matrix.
+This is a medium complexity method. It builds on simpler methods but has a significant number of steps and branches. 
 
 =head3 Later Harm
 
-When there is no Condorcet Winner this method is Later Harm Sufficient. There might be edge cases where IRV's sensitivity to dropping order creates a Later Harm effect, but they should be pretty rare. When there is a Condorcet Winner the effect is the normal one for a Condorcet Method.
+This method meets Later Harm with the default strict option. 
 
-The easiest way to imagine a case where a choice not in the Smith Set changed the outcome is by cloning the winner, such that there is a choice defeating them in early Top Count but not defeating them. The negative impact of the clone is an established weakness of IRV. It would appear that any possible Later Harm issue in addition to be very much at the edge is more than offset by consistency improvement.
-
-Smith Set IRV still has a significant Later Harm failure, but it has demonstrably less Later Harm effect than other Condorcet methods.
+The relaxed option allows a finite Later Harm effect.  
 
 =head3 Condorcet Criteria
 
+This method only meets Condorcet Loser, when the IRV winner is chosen of the Condorcet Winner, the winner is outside the Smith Set. 
 Meets Condorcer Winner, Condorcet Loser, and Smith.
 
 =head3 Consistency
 
-By meeting the three Condorcet Criteria a level of consistency is guaranteed. When there is no Condorcet Winner the resolution has all of the weaknesses of IRV, as discussed in the Later Harm topic above restricting IRV to the Smith Set would appear to provide a consistency gain over basic IRV.
-
-Smith Set IRV is therefore substantially more consistent than basic IRV, but less consistent than Condorcet methods like SSD that focus on Consistency.
+Because this method chooses between the outcomes of two different methods, it inherits the consistency failings of both. It should improve overall the Clone Handling versus IRV, because in cases where the winnable clone loses IRV, it may be the Condorcet Winner.
 
 =cut
 
+sub CondorcetVsIRV ( $E, %args ) {
+  my $relaxed = $args{'relaxed'} ? 1 : 0 ;
+  # apply tca floor
+  $E->SetActive( $E->TCA() );
+  # check for majority winner.
+  my $majority = $E->EvaluateTopCountMajority();
+  return $majority->{'winner'} if $majority->{'winner'} ;
+  my $matrix = $E->PairMatrix();
+  my $WinCondorcet = $matrix->CondorcetWinner();
+  if ($WinCondorcet) {
+    $self->logv( "Condorcet Winner is $WinCondorcet");
+  } else { 
+    $self->logv( "No Condorcet Winner" ) 
+  }
+  
+}
 
 
 1;

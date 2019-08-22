@@ -42,9 +42,9 @@ has 'Active' => (
   is => 'rw',
   isa => 'HashRef',
   lazy => 1,
-  builder => '_buildactive', );
+  builder => 'ResetActive', );
 
-sub _buildactive ( $self ) { return dclone $self->BallotSet()->{'choices'} }
+sub ResetActive ( $self ) { return dclone $self->BallotSet()->{'choices'} }
 
 sub SetActive ( $self, $active ) {
   # Force deref
