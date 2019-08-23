@@ -4,8 +4,11 @@ use 5.022;
 use feature qw /postderef signatures/;
 
 package Vote::Count::Method::CondorcetIRV;
+use namespace::autoclean;
+use Moose;
+extends 'Vote::Count';
 
-use Exporter::Easy ( EXPORT => [ 'SmithSetIRV' ] );
+# use Exporter::Easy ( EXPORT => [ 'SmithSetIRV' ] );
 
 # use namespace::autoclean;
 # use Moose;

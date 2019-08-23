@@ -4,16 +4,23 @@ use 5.022;
 use feature qw /postderef signatures/;
 
 package Vote::Count::Method::CondorcetVsIRV;
+use namespace::autoclean;
+use Moose;
+extends 'Vote::Count::Method::CondorcetIRV';
 
-use Exporter::Easy ( EXPORT => [ 'CondorcetVsIRV' ] );
+# use Exporter::Easy ( EXPORT => [ 'CondorcetVsIRV' ] );
 
-use Vote::Count;
-use Vote::Count::Method::CondorcetIRV;
+# use Vote::Count;
+# use Vote::Count::Method::CondorcetIRV;
+use Storable 3.15 'dclone';
+use Vote::Count::ReadBallots qw/read_ballots write_ballots/;
+use Vote::Count::Redact qw/RedactSingle RedactPair RedactBullet/;
+use Try::Tiny;
 
 our $VERSION='0.021';
 
-
-no warnings 'undefined';
+# no warnings 'uninitialized';
+no warnings qw/experimental/;
 
 =head1 NAME
 
@@ -35,7 +42,7 @@ Vote::Count::Method::CondorcetVsIRV
 
 =head1 Method Common Name: Condorcet vs IRV
 
-Determine if the Condorcet Winner needed votes from the IRV winner, elect the condorcet winner if there was not a later harm violation, elect the IRV winner if there was.
+Determine if the Condorcet Winner needed votes from the IRV winner, elect the Condorcet Winner if there was not a later harm violation, elect the IRV winner if there was.
 
 The method looks for a Condorcet Winner, if there is none it uses IRV to find the winner. If there is a Condorcet Winner it uses standard IRV to find the IRV winner. It then copies the ballots and redacts the later choice from those ballots that indicated both. It then determines if one of the two choices is a Condorcet Winner, if not it determines if one of them would win IRV. If either choice is the winner with redacted ballots, they win. If neither wins, the Condorcet Winner dependended on a Later Harm effect against the IRV winner, and the IRV Winner is elected.
 
@@ -64,6 +71,8 @@ CondorcetVsIRV is exported.
   or
   my $winner = CondorcetVsIRV( $Election, relaxed => 1 );
 
+# options -- smithset -- active
+
 
 =head2 Criteria
 
@@ -73,9 +82,9 @@ This is a medium complexity method. It builds on simpler methods but has a signi
 
 =head3 Later Harm
 
-This method meets Later Harm with the default strict option. 
+This method meets Later Harm with the default strict option. Using the TCA
 
-The relaxed option allows a finite Later Harm effect.  
+The relaxed option allows a finite Later Harm effect.
 
 =head3 Condorcet Criteria
 
@@ -88,21 +97,95 @@ Because this method chooses between the outcomes of two different methods, it in
 
 =cut
 
-sub CondorcetVsIRV ( $E, %args ) {
-  my $relaxed = $args{'relaxed'} ? 1 : 0 ;
-  # apply tca floor
-  $E->SetActive( $E->TCA() );
-  # check for majority winner.
-  my $majority = $E->EvaluateTopCountMajority();
-  return $majority->{'winner'} if $majority->{'winner'} ;
-  my $matrix = $E->PairMatrix();
-  my $WinCondorcet = $matrix->CondorcetWinner();
-  if ($WinCondorcet) {
-    $self->logv( "Condorcet Winner is $WinCondorcet");
-  } else { 
-    $self->logv( "No Condorcet Winner" ) 
+has 'LogTo' => (
+  is => 'rw',
+  isa => 'Str',
+  default => '/tmp/condorcetvsirv',
+);
+
+has 'LogRedactedTo' => ( 
+  is => 'lazy',
+  is => 'rw',
+  isa => 'Str',
+  builder => '_setredactedlog',
+);
+
+sub _setredactedlog ( $self ) { 
+  # There is a bug with LogTo being uninitialized despite having a default
+  my $logto  = defined $self->LogTo()
+    ? $self->LogTo() . '_redacted'
+    : '/tmp/condorcetvsirv_redacted' ; 
+  return $logto ;
+}
+
+sub ResetActive ( $self ) { return dclone $self->BallotSet()->{'choices'} }
+
+sub _CVI_IRV ( $I, $active, $smithsetirv ) {  
+  my $WonIRV = undef;
+  my $irvresult = undef;
+
+warn "cvi irv smithset flag is $smithsetirv ==========="  ;
+  if ($smithsetirv) {
+
+# smithirv needs to match irv args.
+warn "smithsetirv requested ============" ;
+    $irvresult = $I->SmithSetIRV( $I->TieBreakMethod() );  
+  } else {
+warn "normal irv requested ============" ;    
+    $irvresult = $I->RunIRV( $active, $I->TieBreakMethod() );
   }
-  
+  return $irvresult->{'winner'} if $irvresult->{'winner'};
+  $I->logt( "Aborting Election. IRV ended with a Tie.");
+  $I->logt( "Active (Tied) Choices are: " . join( ', ', $irvresult->{'tied'}));
+  $I->SetActiveFromArrayRef( $irvresult->{'tied'});
+  return 0;
+}
+
+sub _CVI_RedactRun ( $E, $A, $B, %options ) {
+  # my $RedactedBallots =  Vote::Count::Matrix->new( 
+  #   'BallotSet' =>
+  #    RedactPair( $E->BallotSet(), $A, $B, 'Active' => $options->{'active'} );
+}
+
+sub CondorcetVsIRV ( $E, %args ) {
+  my $relaxed = defined $args{'relaxed'} ? 1 : 0 ;
+  my $smithsetirv = defined $args{'smithsetirv'} ? $args{'smithsetirv'} : 0 ;
+  my $active = defined $args{'active'} ? $args{'active'} : $E->Active();
+  # check for majority winner.
+  my $majority = $E->EvaluateTopCountMajority()->{'winner'};
+  return $majority if $majority ;
+  my $WonIRV = undef;
+  my $WonCondorcet = $E->PairMatrix()->CondorcetWinner();
+
+  if ($WonCondorcet) {
+    $E->logt( "Condorcet Winner is $WonCondorcet");
+    # Even if SmithSetIRV requested, it would return the condorcet winner
+    # We need to know if a different choice would win IRV.
+    $WonIRV = $E->RunIRV( $active, $E->TieBreakMethod() )->{'winner'};
+  } else {
+    $E->logt( "No Condorcet Winner" );
+    $WonIRV = $E->_CVI_IRV( $active, $smithsetirv );
+  }
+
+  # IRV private already logged tie, now return the false value.
+  # Edge case IRV tie with Condorcet Winner, I guess CW wins?
+  unless ( $WonIRV ) {
+    if ($WonCondorcet) { 
+      $E->logt( "Electing Condorcet Winner $WonCondorcet, IRV tied.");
+      return $WonCondorcet ;
+    }
+    return 0; 
+  }
+  if ( $WonIRV eq $WonCondorcet ) { 
+    $E->logt( "Electing $WonIRV the winner by both Condorcet and IRV.");
+    return $WonIRV;
+  }
+  if ( $WonIRV and !$WonCondorcet ) { 
+    $E->logt( "Electing IRV Winner $WonIRV. There was no Condorcet Winner.");
+    return $WonIRV;
+  }  
+  $E->logt( "reached end without a decision IRV Winner $WonIRV Condorcet Winner $WonCondorcet This is where redacted ballots are needed.");
+  return 0;
 }
 
 

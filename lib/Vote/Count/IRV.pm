@@ -131,6 +131,8 @@ Instant Runoff Voting Looks for a Majority Winner. If one isn't present the choi
 
 Instant Runoff Voting is easy to count by hand and meets the Later Harm and Condorcet Loser Criteria. It, unfortunately, fails a large number of consistency criteria; the order of candidate dropping matters and small changes to the votes of non-winning choices that result in changes to the dropping order can change the outcome.
 
+Instant Runoff Voting is also known as Alternative Vote and as the Hare Method. 
+
 =head2 Tie Handling
 
 There is no standard accepted method for IRV tie resolution, Eliminate All is a common one and the default.

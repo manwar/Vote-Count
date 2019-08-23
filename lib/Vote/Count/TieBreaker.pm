@@ -146,6 +146,8 @@ sub TieBreaker ( $I, $tiebreaker, $active, @choices ) {
     $ranked = $I->Borda( $I->BallotSet()->{'choices'} );
   } elsif ( $tiebreaker eq 'approval') {
     $ranked = $I->Approval( $choices_hashref );
+  # } elsif ( $tiebreaker eq 'topcount') {
+  #   $ranked = $I->TopCount( $choices_hashref );
   } elsif ( $tiebreaker eq 'grandjunction') {
     my $GJ = $I->TieBreakerGrandJunction( @choices );
     if( $GJ->{'winner'}) { return ( $GJ->{'winner'}) }

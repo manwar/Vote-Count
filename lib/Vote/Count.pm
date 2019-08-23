@@ -51,6 +51,11 @@ sub SetActive ( $self, $active ) {
   $self->{'Active'} = dclone $active;
 }
 
+# I was typing the equivalent too often. made a method.
+sub SetActiveFromArrayRef ( $self, $active ) {
+  $self->{'Active'} = { map { $_ => 1 } $active->@* };
+}
+
 sub GetActive ( $self ) {
   # Force deref
   my $active = $self->Active();
@@ -112,11 +117,6 @@ with  'Vote::Count::Approval',
 
 sub VotesCast ( $self ) {
   return $self->BallotSet()->{'votescast'};
-  # my $numvotes = 0;
-  # for my $ballot ( keys $ballots->%* ) {
-  #   $numvotes += $ballots->{$ballot}{'count'};
-  # }
-  # return $numvotes;
 }
 
 __PACKAGE__->meta->make_immutable;
