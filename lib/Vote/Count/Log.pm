@@ -8,7 +8,7 @@ package Vote::Count::Log;
 use Moose::Role;
 
 no warnings 'experimental';
-use Path::Tiny;
+use Path::Tiny 0.108;
 # use Data::Printer;
 
 
@@ -37,12 +37,34 @@ Returns a RankCount object for the current Active Set taking an optional argumen
 
 =cut
 
-
 has 'LogTo' => (
+  is => 'lazy',
   is => 'rw',
   isa => 'Str',
-  default => '/tmp/votecount',
+  builder => '_logsetup',
 );
+
+has 'LogPath' => (
+  is => 'rw',
+  isa => 'Str',
+  default => '/tmp',  
+);
+
+has 'LogBaseName' => (
+  is => 'rw',
+  isa => 'Str',
+  default => 'votecount'
+);
+
+sub _logsetup ( $self ) {
+  my $pathBase = $self->{'LogPath'} || '/tmp';
+  $pathBase =~ s/\/$|\\$//; # trim \ or / from end.
+  unless ( stat $pathBase ) {
+    path( $pathBase)->mkpath();
+  }
+  my $baseName = $self->{'LogBaseName'} || 'votecount' ;
+  return "$pathBase/$baseName";
+}
 
 sub logt {
   my $self = shift @_;

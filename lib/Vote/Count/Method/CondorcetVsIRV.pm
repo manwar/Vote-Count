@@ -6,7 +6,8 @@ use feature qw /postderef signatures/;
 package Vote::Count::Method::CondorcetVsIRV;
 use namespace::autoclean;
 use Moose;
-extends 'Vote::Count::Method::CondorcetIRV';
+
+with 'Vote::Count::Log';
 
 # use Exporter::Easy ( EXPORT => [ 'CondorcetVsIRV' ] );
 
@@ -15,7 +16,10 @@ extends 'Vote::Count::Method::CondorcetIRV';
 use Storable 3.15 'dclone';
 use Vote::Count::ReadBallots qw/read_ballots write_ballots/;
 use Vote::Count::Redact qw/RedactSingle RedactPair RedactBullet/;
+use Vote::Count::Method::CondorcetIRV;
 use Try::Tiny;
+
+use Data::Printer;
 
 our $VERSION='0.021';
 
@@ -97,6 +101,7 @@ Because this method chooses between the outcomes of two different methods, it in
 
 =cut
 
+# LogTo over-writes role LogTo changing default filename.
 has 'LogTo' => (
   is => 'rw',
   isa => 'Str',
@@ -116,22 +121,54 @@ sub _setredactedlog ( $self ) {
     ? $self->LogTo() . '_redacted'
     : '/tmp/condorcetvsirv_redacted' ; 
   return $logto ;
+};
+
+has 'TieBreakMethod' => (
+  is => 'ro',
+  isa => 'Str',
+  default => 'grandjunction',
+);
+
+has 'BallotSet' => ( is => 'ro', isa => 'HashRef', required => 1 );
+
+# has 'BallotSetType' => (
+#   is      => 'ro',
+#   isa     => 'Str',
+#   lazy    => 1,
+#   default =>  'rcv',
+# );
+
+has 'Active' => (
+  is => 'rw',
+  isa => 'HashRef',
+  lazy => 1,
+  builder => '_InitialActive', );
+
+sub _InitialActive ( $I ) { return dclone $I->BallotSet()->{'choices'} }
+
+sub SetActive ( $I, $active ) {
+  $I->{'Active'} = dclone $active;
+  $I->{'Election'}->SetActive( $active );
+  if ( defined $I->{'RedactedElection'} ) {
+    $I->{'RedactedElection'}->SetActive( $active );
+  }
 }
 
-sub ResetActive ( $self ) { return dclone $self->BallotSet()->{'choices'} }
+sub ResetActive ( $self ) { 
+  my $new = dclone $self->BallotSet()->{'choices'};
+  $self->SetActive( $new );
+  return $new;
+}
+
+# sub ResetActive ( $self ) { return dclone $self->BallotSet()->{'choices'} }
 
 sub _CVI_IRV ( $I, $active, $smithsetirv ) {  
   my $WonIRV = undef;
   my $irvresult = undef;
-
-warn "cvi irv smithset flag is $smithsetirv ==========="  ;
   if ($smithsetirv) {
-
 # smithirv needs to match irv args.
-warn "smithsetirv requested ============" ;
     $irvresult = $I->SmithSetIRV( $I->TieBreakMethod() );  
-  } else {
-warn "normal irv requested ============" ;    
+  } else {  
     $irvresult = $I->RunIRV( $active, $I->TieBreakMethod() );
   }
   return $irvresult->{'winner'} if $irvresult->{'winner'};
@@ -141,53 +178,126 @@ warn "normal irv requested ============" ;
   return 0;
 }
 
-sub _CVI_RedactRun ( $E, $A, $B, %options ) {
-  # my $RedactedBallots =  Vote::Count::Matrix->new( 
-  #   'BallotSet' =>
-  #    RedactPair( $E->BallotSet(), $A, $B, 'Active' => $options->{'active'} );
+sub BUILD {
+    my $self = shift;
+    $self->{'Election'} = Vote::Count::Method::CondorcetIRV->new(
+        BallotSet      => $self->BallotSet(),
+        TieBreakMethod => $self->TieBreakMethod(),
+        Active         => $self->Active(),
+        BallotSetType  => 'rcv',
+        LogTo          => $self->{'LogTo'} . '_unredacted' ,
+    );
+    $self->{'RedactedElection'} = undef,;
 }
 
-sub CondorcetVsIRV ( $E, %args ) {
-  my $relaxed = defined $args{'relaxed'} ? 1 : 0 ;
+sub WriteAllLogs ($I) {
+  $I->WriteLog();
+  $I->Election()->WriteLog();
+  $I->RedactedElection()->WriteLog();  
+  $I->Election()->PairMatrix()->WriteLog();
+  $I->RedactedElection()->PairMatrix()->WriteLog();    
+}
+
+sub Election ($self) { return $self->{'Election'} }
+
+sub RedactedElection ( $self, $ballotset=undef, $active=undef ) { 
+  return $self->{'RedactedElection'} }
+
+sub CreateRedactedElection ( $self, $WonCondorcet, $WonIRV ) {
+  my $ballotset = 
+    RedactPair( $self->BallotSet(), $WonCondorcet, $WonIRV );
+  $self->{'RedactedElection'} =
+  Vote::Count::Method::CondorcetIRV->new(
+    BallotSet => $ballotset,
+    TieBreakMethod => $self->TieBreakMethod(),
+    Active => $self->Active(),
+    BallotSetType => 'rcv',
+    LogTo => $self->LogRedactedTo(),
+    ); 
+}
+
+#  $I, $active, $smithsetirv
+sub _CVI_RedactRun ( $I, $WonCondorcet, $WonIRV, $active, $options ) {
+  my $smithsetirv = defined $options->{'smithsetirv'} ?$options->{'smithsetirv'} :0;
+  my $relaxed = defined $options->{'relaxed'} ? $options->{'relaxed'} : 0 ;
+  my $E = $I->Election();
+  my $R = $I->RedactedElection();
+  my $ConfirmC = $R->PairMatrix->CondorcetWinner();
+  my $ConfirmI = _CVI_IRV( $R, $active, $smithsetirv );
+  if ( $ConfirmC eq $WonCondorcet or $ConfirmC eq $WonIRV) { 
+    $I->logt( "Elected $ConfirmC, Redacted Ballots Condorcet Winner.");
+    return $ConfirmC;
+  }
+  else {
+    $ConfirmI = _CVI_IRV( $R, $active, $smithsetirv );
+    if ( $ConfirmI eq $WonCondorcet or $ConfirmI eq $WonIRV) { 
+      $I->logt( "Elected $ConfirmI, Redacted Ballots IRV Winner.");
+      return $ConfirmI;
+    }
+  }
+  $ConfirmC = 'NONE' unless $ConfirmC;
+  $I->logt( "Neither $WonCondorcet nor $WonIRV were confirmed.");
+  $I->logt( "Redacted Ballots Winners: Condorcet = $ConfirmC, IRV = $ConfirmI");
+  if( $relaxed ) {
+    my $GreatestLoss = $R->PairMatrix()->GreatestLoss( $WonCondorcet );
+    my $Margin = $E->PairMatrix()->GetPairResult( $WonCondorcet, $WonIRV )->{'margin'};
+    $I->logt( "The margin of the Condorcet over the IRV winner was: $Margin");
+    $I->logt( "$WonCondorcet\'s greatest loss with redacted ballots was $GreatestLoss.");    
+    if ( $Margin > $GreatestLoss ) {
+      $I->logt( "Elected: $WonCondorcet" );
+      return $WonCondorcet;
+    } else {
+      $I->logt( "Elected: $WonIRV" );
+      return $WonIRV;
+    }
+  }
+}
+
+sub CondorcetVsIRV ( $self, %args ) {
+  my $E = $self->Election();
   my $smithsetirv = defined $args{'smithsetirv'} ? $args{'smithsetirv'} : 0 ;
-  my $active = defined $args{'active'} ? $args{'active'} : $E->Active();
+  my $active = $self->Active();
   # check for majority winner.
   my $majority = $E->EvaluateTopCountMajority()->{'winner'};
   return $majority if $majority ;
   my $WonIRV = undef;
   my $WonCondorcet = $E->PairMatrix()->CondorcetWinner();
-
   if ($WonCondorcet) {
-    $E->logt( "Condorcet Winner is $WonCondorcet");
+    $self->logt( "Condorcet Winner is $WonCondorcet");
     # Even if SmithSetIRV requested, it would return the condorcet winner
     # We need to know if a different choice would win IRV.
     $WonIRV = $E->RunIRV( $active, $E->TieBreakMethod() )->{'winner'};
   } else {
-    $E->logt( "No Condorcet Winner" );
-    $WonIRV = $E->_CVI_IRV( $active, $smithsetirv );
+    $self->logt( "No Condorcet Winner" );
+    $WonIRV = _CVI_IRV( $E, $active, $smithsetirv );
+    $self->logt( "Electing IRV Winner $WonIRV");
+    return $WonIRV;
   }
 
   # IRV private already logged tie, now return the false value.
   # Edge case IRV tie with Condorcet Winner, I guess CW wins?
   unless ( $WonIRV ) {
     if ($WonCondorcet) { 
-      $E->logt( "Electing Condorcet Winner $WonCondorcet, IRV tied.");
+      $self->logt( "Electing Condorcet Winner $WonCondorcet, IRV tied.");
       return $WonCondorcet ;
     }
     return 0; 
   }
   if ( $WonIRV eq $WonCondorcet ) { 
-    $E->logt( "Electing $WonIRV the winner by both Condorcet and IRV.");
+    $self->logt( "Electing $WonIRV the winner by both Condorcet and IRV.");
     return $WonIRV;
   }
   if ( $WonIRV and !$WonCondorcet ) { 
-    $E->logt( "Electing IRV Winner $WonIRV. There was no Condorcet Winner.");
+    $self->logt( "Electing IRV Winner $WonIRV. There was no Condorcet Winner.");
     return $WonIRV;
-  }  
-  $E->logt( "reached end without a decision IRV Winner $WonIRV Condorcet Winner $WonCondorcet This is where redacted ballots are needed.");
-  return 0;
-}
+  }
+  $self->CreateRedactedElection( $WonCondorcet, $WonIRV);
+  return $self->_CVI_RedactRun( $WonCondorcet, $WonIRV, $active, \%args );
 
+# sub _CVI_RedactRun ( $I, $WonCondorcet, $WonIRV, $active, %args ) {
+
+  # return $WonIRV;
+}
 
 1;
 

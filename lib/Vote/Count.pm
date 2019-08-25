@@ -30,11 +30,11 @@ Vote::Count
 
 # ABSTRACT: Parent Module for Vote::Count. Toolkit for vote counting.
 
-has 'BallotSet' => ( is => 'ro', isa => 'HashRef' );
+has 'BallotSet' => ( is => 'ro', isa => 'HashRef', required => 1 );
+
 has 'BallotSetType' => (
   is      => 'ro',
   isa     => 'Str',
-  lazy    => 1,
   default =>  'rcv',
 );
 
