@@ -11,13 +11,13 @@ use Moose::Role;
 
 no warnings 'experimental';
 
-our $VERSION='0.021';
+our $VERSION='0.022';
 
 =head1 NAME
 
 Vote::Count::Floor
 
-=head1 VERSION 0.021
+=head1 VERSION 0.022
 
 =cut
 

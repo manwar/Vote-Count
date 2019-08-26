@@ -24,13 +24,13 @@ use Sort::Hash;
 
 use YAML::XS;
 
-our $VERSION='0.021';
+our $VERSION='0.022';
 
 =head1 NAME
 
 Vote::Count::Matrix
 
-=head1 VERSION 0.021
+=head1 VERSION 0.022
 
 =cut
 
@@ -403,7 +403,7 @@ Condorcet Pairwise Methods require a Win-Loss Matrix. This object takes an RCV B
 
 =head1 SYNOPSIS
 
-
+ 
  my $Matrix =
    Vote::Count::Matrix->new(
      'BallotSet' => $myVoteCount->BallotSet() );
@@ -433,6 +433,11 @@ Defaults to rcv. Currently rcv is the only type supported. In the future the Mat
 A hash reference with active choices as the keys. The default value is all of the choices defined in the BallotSet.
 
 
+=head3 Logging (optional)
+
+Has the logging methods of Vote::Count::Log.
+
+
 =head1 Methods
 
 
@@ -450,7 +455,7 @@ Returns a MarkDown formatted table with the votes for all of the pairings.
 
 Returns the results of the pairing of two choices as a hashref.
 
-
+ 
    {
     'FUDGESWIRL' =>  6,
     'loser'      =>  "STRAWBERRY",
@@ -486,7 +491,7 @@ Returns an array of the choice or choices with the fewest wins.
 
 Eliminates all Condorcet Losers from the Matrix Object's Active list. Returns a hashref. Takes an optional true false argument (default is false) to include choices that have tied but not won in the elimination.
 
-
+ 
    {
      verbose => 'verbose message',
      terse   => 'terse message',

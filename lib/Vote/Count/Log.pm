@@ -12,28 +12,45 @@ use Path::Tiny 0.108;
 # use Data::Printer;
 
 
-our $VERSION='0.021';
+our $VERSION='0.022';
 
 =head1 NAME
 
 Vote::Count::Log
 
-=head1 VERSION 0.021
+=head1 VERSION 0.022
 
 =cut
 
 # ABSTRACT: Logging for Vote::Count. Toolkit for vote counting.
 
-=head1 Definition of Approval
+=head1 Vote::Count Logging Methods
 
-In Approval Voting, voters indicate which Choices they approve of indicating no preference. Approval can be infered from a Ranked Choice Ballot, by treating each ranked Choice as Approved.
+=head2 LogTo
 
-=head1 Method Approval
+Sets a path and Naming pattern for writing logs with the WriteLogs method.
 
-Returns a RankCount object for the current Active Set taking an optional argument of an active list as a HashRef.
+  'LogTo' => '/logging_path/election_name'
 
-  my $Approval = $Election->Approval();
-  say $Approval->RankTable;
+LogTo will not create a new directory if the directory does not exist.
+
+The default log location is '/tmp/votecount'.
+
+=head2 LogPath
+
+Specifies a Path to the Log Files, unlike LogTo, LogPath will create the Path if it does not exist. 
+
+=head2 LogBaseName 
+
+Sets the Base portion of the logfile names, but only if LogPath is specified. The default value is votecount.
+
+=head2 WriteLogs
+
+Write the logs appending '.brief', '.full', and '.debug' for the three logs where brief is a summary written with the logt (log terse) method, the full transcript log written with logv, and finally the debug log written with logd. Each higher log level captures all events of the lower log levels.
+
+=head1 Logging Events
+
+When logging from your methods, use logt for events that produce a summary, use logv for events that should be in the full transcript such as round counts, and finally debug is for events that may be helpful in debugging but which should not be in the transcript. Events written to logt will be included in the verbose log and all events in the verbose log will be in the debug log. 
 
 =cut
 
